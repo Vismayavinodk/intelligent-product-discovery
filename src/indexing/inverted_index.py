@@ -43,10 +43,17 @@ class InvertedIndex:
         query_vec = self.vectorizer.transform([query])
         similarities = cosine_similarity(query_vec, self.tfidf_matrix).flatten()
         
-        # Get top-k indices
-        top_indices = similarities.argsort()[-top_k:][::-1]
-        
-        return [(int(idx), float(similarities[idx])) for idx in top_indices]
+        # Get top-k indices with non-zero similarity
+        sorted_indices = similarities.argsort()[::-1]
+        results = []
+        for idx in sorted_indices:
+            if similarities[idx] > 0.0:
+                results.append((int(idx), float(similarities[idx])))
+                if len(results) >= top_k:
+                    break
+            else:
+                break
+        return results
 
     def save(self, path: str) -> None:
         """

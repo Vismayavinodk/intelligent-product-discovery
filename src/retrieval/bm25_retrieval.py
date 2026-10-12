@@ -39,11 +39,15 @@ class BM25Retriever:
         
         scores = self.bm25.get_scores(tokenized_query)
         
-        # Get top-k indices
-        top_indices = np.argsort(scores)[-top_k:][::-1]
-        
+        # Get top-k indices with non-zero scores
+        sorted_indices = np.argsort(scores)[::-1]
         results = []
-        for idx in top_indices:
-            results.append((self.product_ids[idx], float(scores[idx])))
+        for idx in sorted_indices:
+            if scores[idx] > 0.0:
+                results.append((self.product_ids[idx], float(scores[idx])))
+                if len(results) >= top_k:
+                    break
+            else:
+                break
             
         return results

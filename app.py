@@ -31,17 +31,14 @@ if PROJECT_ROOT not in sys.path:
 from src import config
 from src.preprocessing.text_preprocessor import TextPreprocessor
 from src.indexing.inverted_index import InvertedIndex
-from src.indexing.embedding_index import EmbeddingIndex
 from src.retrieval.tfidf_retrieval import TFIDFRetriever
 from src.retrieval.bm25_retrieval import BM25Retriever
-from src.retrieval.semantic_retrieval import SemanticRetriever
 from src.retrieval.query_expansion import QueryExpander
+from src.retrieval.spell_corrector import SpellCorrector
 from src.retrieval.hybrid_ranker import HybridRanker
 from src.recommendation.content_based import ContentBasedRecommender
 from src.recommendation.collaborative import CollaborativeRecommender
 from src.recommendation.personalization import PersonalizationEngine
-from src.analysis.review_analyzer import ReviewAnalyzer
-from src.analysis.duplicate_detector import DuplicateDetector
 from src.evaluation.metrics import (
     precision_at_k,
     recall_at_k,
@@ -52,6 +49,31 @@ from src.evaluation.metrics import (
     reciprocal_rank,
     mean_reciprocal_rank,
 )
+
+# Optional imports — degrade gracefully if not available
+_HAS_EMBEDDING = False
+_HAS_REVIEW_ANALYZER = False
+_HAS_DUPLICATE_DETECTOR = False
+
+try:
+    from src.indexing.embedding_index import EmbeddingIndex
+    from src.retrieval.semantic_retrieval import SemanticRetriever
+    _HAS_EMBEDDING = True
+except Exception:
+    EmbeddingIndex = None
+    SemanticRetriever = None
+
+try:
+    from src.analysis.review_analyzer import ReviewAnalyzer
+    _HAS_REVIEW_ANALYZER = True
+except Exception:
+    ReviewAnalyzer = None
+
+try:
+    from src.analysis.duplicate_detector import DuplicateDetector
+    _HAS_DUPLICATE_DETECTOR = True
+except Exception:
+    DuplicateDetector = None
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PAGE CONFIGURATION
@@ -70,26 +92,26 @@ st.markdown(
     .main-title {
         font-size: 2.2rem;
         font-weight: 700;
-        color: #1E3A8A;
+        color: #3B82F6;
         margin-bottom: 0.2rem;
     }
     .sub-title {
         font-size: 1.05rem;
-        color: #4B5563;
+        color: #9CA3AF;
         margin-bottom: 1.5rem;
     }
     .product-card {
-        background-color: #FFFFFF;
-        border: 1px solid #E5E7EB;
+        background-color: rgba(128, 128, 128, 0.08);
+        border: 1px solid rgba(128, 128, 128, 0.2);
         border-radius: 10px;
         padding: 1.2rem;
         margin-bottom: 1rem;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         transition: transform 0.15s ease-in-out;
     }
     .product-card:hover {
         border-color: #3B82F6;
-        box-shadow: 0 4px 8px rgba(59, 130, 246, 0.15);
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
     }
     .badge {
         display: inline-block;
@@ -99,10 +121,10 @@ st.markdown(
         border-radius: 9999px;
         margin-right: 0.4rem;
     }
-    .badge-brand { background-color: #DBEAFE; color: #1D4ED8; }
-    .badge-category { background-color: #FEF3C7; color: #B45309; }
-    .badge-score { background-color: #D1FAE5; color: #065F46; }
-    .badge-price { background-color: #F3E8FF; color: #6B21A8; }
+    .badge-brand { background-color: rgba(59, 130, 246, 0.2); color: #60A5FA; border: 1px solid rgba(59, 130, 246, 0.4); }
+    .badge-category { background-color: rgba(245, 158, 11, 0.2); color: #FBBF24; border: 1px solid rgba(245, 158, 11, 0.4); }
+    .badge-score { background-color: rgba(16, 185, 129, 0.2); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.4); }
+    .badge-price { background-color: rgba(168, 85, 247, 0.2); color: #C084FC; border: 1px solid rgba(168, 85, 247, 0.4); }
     </style>
     """,
     unsafe_allow_html=True,
@@ -281,6 +303,149 @@ def get_sample_products() -> pd.DataFrame:
             "description": "Advanced health sensors for ECG, blood oxygen, temperature sensing, Crash Detection, and comprehensive fitness tracking.",
             "reviews_text": "Comprehensive fitness tracking and sleep analysis. Crash detection provides peace of mind. Daily battery lasts comfortably.",
         },
+        {
+            "product_id": 16,
+            "name": "Michael Kors Jet Set Large Saffiano Leather Tote Handbag for Women",
+            "brand": "Michael Kors",
+            "categories": "Handbags, Women's Fashion, Bags",
+            "price": 198.00,
+            "avg_rating": 4.8,
+            "review_count": 520,
+            "description": "Classic women's tote handbag crafted from durable Saffiano leather with top-zip closure, spacious interior pockets, and gold-tone hardware. Ideal work and travel shoulder bag for women.",
+            "reviews_text": "Gorgeous handbag with sturdy leather that does not scratch. Holds my laptop and daily essentials comfortably. Perfect everyday tote for work.",
+        },
+        {
+            "product_id": 17,
+            "name": "Coach Willow Soft Leather Shoulder Handbag and Crossbody Bag for Women",
+            "brand": "Coach",
+            "categories": "Handbags, Women's Fashion, Purses",
+            "price": 350.00,
+            "avg_rating": 4.7,
+            "review_count": 310,
+            "description": "Versatile women's shoulder bag made of polished pebble leather with detachable straps for shoulder or crossbody carry. Secure turnlock closure and center zip compartment.",
+            "reviews_text": "High quality designer bag. The leather is buttery soft and the turnlock gives it an elegant classic look. Fits all my purse essentials.",
+        },
+        {
+            "product_id": 18,
+            "name": "Kate Spade New York Knott Medium Leather Satchel Handbag",
+            "brand": "Kate Spade",
+            "categories": "Handbags, Women's Fashion, Purses",
+            "price": 278.00,
+            "avg_rating": 4.6,
+            "review_count": 280,
+            "description": "Chic women's leather satchel with knotted cinch sides, top handles, optional crossbody strap, and protective metal feet. Roomy interior with snap and zip dividers.",
+            "reviews_text": "Super cute satchel handbag with excellent craftsmanship. The color is beautiful and it goes with every outfit. Highly recommended.",
+        },
+        {
+            "product_id": 19,
+            "name": "Fossil Rachel Leather Satchel Purse with Crossbody Strap for Women",
+            "brand": "Fossil",
+            "categories": "Handbags, Women's Fashion, Purses",
+            "price": 140.00,
+            "avg_rating": 4.5,
+            "review_count": 430,
+            "description": "Genuine leather satchel bag featuring two slide pockets, interior zipper pocket, brass hardware, and dual handles with a detachable crossbody strap.",
+            "reviews_text": "Durable genuine leather that ages beautifully. Lots of pockets for organizing keys, phone, and wallet. Great value everyday handbag.",
+        },
+        {
+            "product_id": 20,
+            "name": "Longchamp Le Pliage Large Nylon Shoulder Tote Bag for Women",
+            "brand": "Longchamp",
+            "categories": "Handbags, Women's Fashion, Bags",
+            "price": 155.00,
+            "avg_rating": 4.8,
+            "review_count": 890,
+            "description": "Iconic lightweight foldable nylon tote bag with Russian leather trim, snap flap closure, and water-resistant interior lining. Spacious women's travel and shopping tote.",
+            "reviews_text": "Extremely lightweight and indestructible. Folds up small in my luggage and holds a ton of shopping. A wardrobe staple for women.",
+        },
+        {
+            "product_id": 21,
+            "name": "Tory Burch Fleming Soft Convertible Leather Shoulder Bag for Women",
+            "brand": "Tory Burch",
+            "categories": "Handbags, Women's Fashion, Luxury",
+            "price": 498.00,
+            "avg_rating": 4.9,
+            "review_count": 190,
+            "description": "Luxury diamond-quilted leather women's handbag with embossed double-T logo, braided brushed gold chain strap, and magnetic flap closure.",
+            "reviews_text": "Stunning luxury bag that elevates any evening dress or casual outfit. The diamond quilting is flawless and leather is silky smooth.",
+        },
+        {
+            "product_id": 22,
+            "name": "Nike Air Zoom Pegasus 40 Women's Road Running Shoes",
+            "brand": "Nike",
+            "categories": "Shoes, Women's Fashion, Athletic",
+            "price": 130.00,
+            "avg_rating": 4.7,
+            "review_count": 670,
+            "description": "Springy running shoes for women with dual Zoom Air units, engineered mesh upper, and waffle-inspired rubber outsole for road traction.",
+            "reviews_text": "Most comfortable running shoes I have owned. Great arch support and cushioning for 5k and marathon training runs.",
+        },
+        {
+            "product_id": 23,
+            "name": "Lululemon Align High-Rise 25-inch Yoga Leggings for Women",
+            "brand": "Lululemon",
+            "categories": "Clothing, Women's Fashion, Activewear",
+            "price": 98.00,
+            "avg_rating": 4.8,
+            "review_count": 1120,
+            "description": "Buttery soft Nulu fabric yoga pants designed for yoga and low-impact workouts. Weightless feel with four-way stretch and sweat-wicking breathability.",
+            "reviews_text": "Feels like a second skin. Does not roll down during yoga or Pilates. Worth every penny for comfort.",
+        },
+        {
+            "product_id": 24,
+            "name": "Instant Pot Duo 7-in-1 Electric Pressure Cooker 6 Quart",
+            "brand": "Instant Pot",
+            "categories": "Kitchen, Home & Kitchen, Appliances",
+            "price": 99.95,
+            "avg_rating": 4.7,
+            "review_count": 2100,
+            "description": "Multi-cooker pressure cooker, slow cooker, rice cooker, steamer, sauté pan, yogurt maker, and food warmer with 13 one-touch Smart Programs.",
+            "reviews_text": "Cuts cooking time in half. Stews and pulled pork come out tender and delicious. Dishwasher safe stainless steel pot.",
+        },
+        {
+            "product_id": 25,
+            "name": "Nespresso VertuoPlus Coffee and Espresso Machine by De'Longhi",
+            "brand": "Nespresso",
+            "categories": "Kitchen, Home & Kitchen, Coffee",
+            "price": 169.00,
+            "avg_rating": 4.6,
+            "review_count": 780,
+            "description": "Single-serve coffee brewer using Centrifusion technology to read barcodes on capsules and brew barista-quality coffee with rich crema.",
+            "reviews_text": "Makes cafe quality espresso at home in seconds. Delicious thick crema layer on every cup. Easy to clean.",
+        },
+        {
+            "product_id": 26,
+            "name": "CeraVe Moisturizing Cream with Hyaluronic Acid and Ceramides",
+            "brand": "CeraVe",
+            "categories": "Beauty, Skincare, Personal Care",
+            "price": 19.99,
+            "avg_rating": 4.8,
+            "review_count": 3400,
+            "description": "Dermatologist recommended daily face and body moisturizer with 3 essential ceramides and MVE delivery technology for 24-hour hydration.",
+            "reviews_text": "Gentle, fragrance-free, and restores dry cracked skin. Absorbs quickly without feeling greasy. A skincare essential.",
+        },
+        {
+            "product_id": 27,
+            "name": "Dyson V15 Detect Cordless Vacuum Cleaner with Laser Fluffy Cleaner Head",
+            "brand": "Dyson",
+            "categories": "Home, Home & Kitchen, Cleaning",
+            "price": 749.99,
+            "avg_rating": 4.7,
+            "review_count": 480,
+            "description": "Intelligent cordless vacuum engineered with laser illumination revealing invisible dust on hard floors and piezo sensor measuring particle counts.",
+            "reviews_text": "The laser light shows dust you had no idea was there. Suction power is unreal for a battery vacuum. Cleans pet hair effortlessly.",
+        },
+        {
+            "product_id": 28,
+            "name": "Levi's Women's 721 High Rise Skinny Stretch Denim Jeans",
+            "brand": "Levi's",
+            "categories": "Clothing, Women's Fashion, Denim",
+            "price": 69.50,
+            "avg_rating": 4.5,
+            "review_count": 820,
+            "description": "Flattering high-rise waist with skinny leg silhouette made of premium stretch denim that hugs curves and retains shape throughout the day.",
+            "reviews_text": "Perfect high waist and slimming fit. Comfortable stretch material that does not bag out at the knees after wearing.",
+        },
     ]
     df = pd.DataFrame(sample_records)
 
@@ -361,17 +526,18 @@ def load_or_build_indices(df: pd.DataFrame):
     semantic_ret = None
     emb_index = None
     try:
-        emb_index = EmbeddingIndex(model_name=config.EMBEDDING_MODEL)
-        if os.path.exists(emb_path):
-            try:
-                emb_index = EmbeddingIndex.load(emb_path)
-            except Exception:
+        if _HAS_EMBEDDING and EmbeddingIndex is not None:
+            emb_index = EmbeddingIndex(model_name=config.EMBEDDING_MODEL)
+            if os.path.exists(emb_path):
+                try:
+                    emb_index = EmbeddingIndex.load(emb_path)
+                except Exception:
+                    emb_index.build(documents)
+            else:
                 emb_index.build(documents)
-        else:
-            emb_index.build(documents)
-        semantic_ret = SemanticRetriever(emb_index, product_ids)
+            if SemanticRetriever is not None:
+                semantic_ret = SemanticRetriever(emb_index, product_ids)
     except Exception as exc:
-        # Fallback if sentence-transformers / PyTorch / CUDA cannot load
         emb_index = None
         semantic_ret = None
 
@@ -411,6 +577,9 @@ def load_or_build_indices(df: pd.DataFrame):
             collab_recommender = None
     else:
         collab_recommender = None
+    # Spell Corrector (domain-aware vocabulary)
+    spell_corrector = SpellCorrector()
+    spell_corrector.build_vocabulary(documents)
 
     return {
         "preprocessor": preprocessor,
@@ -422,19 +591,20 @@ def load_or_build_indices(df: pd.DataFrame):
         "emb_index": emb_index,
         "content_based": cb_recommender,
         "collaborative": collab_recommender,
+        "spell_corrector": spell_corrector,
     }
 
 
-def spell_check(query: str) -> Tuple[str, bool]:
-    """Perform basic spelling correction via TextBlob."""
-    try:
-        from textblob import TextBlob
-
-        corrected = str(TextBlob(query).correct())
-        if corrected.strip().lower() != query.strip().lower():
-            return corrected, True
-    except Exception:
-        pass
+def spell_check(query: str, components: Dict[str, Any]) -> Tuple[str, bool]:
+    """Perform domain-aware spell correction using catalog vocabulary."""
+    sc = components.get("spell_corrector")
+    if sc is not None:
+        try:
+            corrected = sc.correct_query(query)
+            if corrected.strip().lower() != query.strip().lower():
+                return corrected, True
+        except Exception:
+            pass
     return query, False
 
 
@@ -510,7 +680,7 @@ def render_search_page(df: pd.DataFrame, components: Dict[str, Any]) -> None:
     # Process Query
     effective_query = query_input.strip()
     if enable_spell:
-        corrected_q, has_changed = spell_check(effective_query)
+        corrected_q, has_changed = spell_check(effective_query, components)
         if has_changed:
             st.info(f"✨ Auto-corrected query: **{corrected_q}** (original: *{effective_query}*)")
             effective_query = corrected_q
@@ -629,16 +799,16 @@ def render_search_page(df: pd.DataFrame, components: Dict[str, Any]) -> None:
                     f"""
                     <div class="product-card">
                         <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-                            <h4 style="margin:0; color:#1E3A8A;">#{rank}. {name}</h4>
+                            <h4 style="margin:0; color:#60A5FA;">#{rank}. {name}</h4>
                             <span class="badge badge-score">Relevance: {score:.4f}</span>
                         </div>
                         <div style="margin-top:0.4rem; margin-bottom:0.6rem;">
                             <span class="badge badge-brand">🏷️ {brand}</span>
                             <span class="badge badge-category">📁 {categories}</span>
                             <span class="badge badge-price">💰 {price}</span>
-                            <span class="badge" style="background-color:#FEF3C7; color:#92400E;">{rating} ({rev_count} reviews)</span>
+                            <span class="badge" style="background-color:rgba(245, 158, 11, 0.2); color:#FBBF24; border:1px solid rgba(245, 158, 11, 0.4);">{rating} ({rev_count} reviews)</span>
                         </div>
-                        <p style="color:#4B5563; font-size:0.92rem; margin:0;">{desc}</p>
+                        <p style="color:#D1D5DB; font-size:0.92rem; margin:0;">{desc}</p>
                     </div>
                     """,
                     unsafe_allow_html=True,
@@ -1114,7 +1284,7 @@ flowchart TD
 def main() -> None:
     """Application entry point and routing coordinator."""
     # Sidebar Navigation
-    st.sidebar.image("https://img.icons8.com/clouds/200/shopping-cart.png", width=110)
+    st.sidebar.markdown("## 🛒 **E-Commerce IR**")
     st.sidebar.title("Navigation")
     page = st.sidebar.radio(
         "Select Page",

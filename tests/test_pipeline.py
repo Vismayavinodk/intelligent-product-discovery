@@ -7,6 +7,9 @@ Run:  python -m pytest tests/test_pipeline.py -v
 
 import sys
 import os
+os.environ["USE_TF"] = "0"
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+os.environ["USE_TORCH"] = "1"
 import pytest
 import numpy as np
 import pandas as pd

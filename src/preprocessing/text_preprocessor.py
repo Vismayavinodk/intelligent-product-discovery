@@ -11,18 +11,23 @@ from nltk.corpus import wordnet
 from typing import List, Optional
 
 def download_nltk_data() -> None:
-    """Download required NLTK data."""
-    resources = ['punkt', 'stopwords', 'wordnet', 'averaged_perceptron_tagger']
-    for resource in resources:
+    """Download required NLTK data if not already present."""
+    resource_checks = [
+        ('tokenizers/punkt', 'punkt'),
+        ('tokenizers/punkt_tab', 'punkt_tab'),
+        ('corpora/stopwords', 'stopwords'),
+        ('corpora/wordnet', 'wordnet'),
+        ('taggers/averaged_perceptron_tagger', 'averaged_perceptron_tagger'),
+        ('taggers/averaged_perceptron_tagger_eng', 'averaged_perceptron_tagger_eng'),
+    ]
+    for path, name in resource_checks:
         try:
-            nltk.data.find(f'tokenizers/{resource}')
+            nltk.data.find(path)
         except LookupError:
             try:
-                nltk.download(resource, quiet=True)
+                nltk.download(name, quiet=True)
             except Exception:
-                pass # Can't handle this in a simple script easily if network fails
-        except Exception:
-            pass
+                pass
 
 download_nltk_data()
 

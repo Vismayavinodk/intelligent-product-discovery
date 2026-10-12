@@ -7,7 +7,10 @@ from src.config import PRF_TOP_DOCS, PRF_EXPANSION_TERMS, WORDNET_MAX_SYNONYMS
 try:
     nltk.data.find('corpora/wordnet')
 except LookupError:
-    nltk.download('wordnet')
+    try:
+        nltk.download('wordnet', quiet=True)
+    except Exception:
+        pass
 
 class QueryExpander:
     """

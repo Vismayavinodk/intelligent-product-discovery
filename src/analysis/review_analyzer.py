@@ -82,9 +82,22 @@ class ReviewAnalyzer:
         """
         phrases = {}
         for review in reviews:
-            blob = TextBlob(review)
-            for np_ in blob.noun_phrases:
-                phrases[np_] = phrases.get(np_, 0) + 1
+            try:
+                blob = TextBlob(review)
+                for np_ in blob.noun_phrases:
+                    phrases[np_] = phrases.get(np_, 0) + 1
+            except Exception:
+                try:
+                    tokens = nltk.word_tokenize(review)
+                    tagged = nltk.pos_tag(tokens)
+                    for i in range(len(tagged) - 1):
+                        w1, t1 = tagged[i]
+                        w2, t2 = tagged[i + 1]
+                        if (t1.startswith('JJ') and t2.startswith('NN')) or (t1.startswith('NN') and t2.startswith('NN')):
+                            phrase = f"{w1.lower()} {w2.lower()}"
+                            phrases[phrase] = phrases.get(phrase, 0) + 1
+                except Exception:
+                    pass
                 
         sorted_phrases = sorted(phrases.items(), key=lambda x: x[1], reverse=True)
         return [p[0] for p in sorted_phrases[:10]]

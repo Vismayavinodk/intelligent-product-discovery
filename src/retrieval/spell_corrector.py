@@ -165,20 +165,18 @@ class SpellCorrector:
         if cleaned in self.vocab_counts and self.vocab_counts[cleaned] > 0:
             return self._match_case(word, cleaned)
 
-        # Check candidate corrections
+        # Check if the word is already a recognized valid English word (via WordNet)
+        try:
+            from nltk.corpus import wordnet
+            if wordnet.synsets(cleaned):
+                return word
+        except Exception:
+            pass
+
+        # Check candidate corrections against domain catalog vocabulary
         candidates = self._candidates(cleaned, max_distance=2)
         if candidates:
             return self._match_case(word, candidates[0])
-
-        # TextBlob fallback
-        if TextBlobWord is not None:
-            try:
-                tb_word = TextBlobWord(cleaned)
-                corrected_tb = str(tb_word.correct())
-                if corrected_tb and corrected_tb != cleaned:
-                    return self._match_case(word, corrected_tb)
-            except Exception:
-                pass
 
         return word
 
