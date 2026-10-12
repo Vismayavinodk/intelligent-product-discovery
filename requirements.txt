@@ -1,0 +1,13 @@
+pandas
+numpy
+nltk
+scikit-learn
+rank-bm25
+sentence-transformers
+torch
+textblob
+matplotlib
+seaborn
+jupyter
+datasketch
+streamlit
